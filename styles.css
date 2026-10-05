@@ -120,7 +120,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* =========================================================
    HERO
    ========================================================= */
-.hero { position: relative; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; justify-content: center; color: var(--white); background: var(--black); overflow: hidden; }
+.hero { position: relative; min-height: min(100vh, 1000px); min-height: min(100svh, 1000px); display: flex; flex-direction: column; justify-content: center; color: var(--white); background: var(--black); overflow: hidden; }
 .hero__bg {
   position: absolute; inset: 0;
   background:
@@ -386,8 +386,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- Reveal animation ---------- */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
-.js .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
-.js .reveal.is-visible { opacity: 1; transform: none; }
+/* Sadržaj je uvek vidljiv po defaultu; skripta sakriva samo elemente koji su sigurno ispod ekrana */
+.reveal { transition: opacity .8s var(--ease), transform .8s var(--ease); }
+.reveal.reveal--pending:not(.is-visible) { opacity: 0; transform: translateY(28px); }
 
 /* =========================================================
    RESPONSIVE
@@ -465,5 +466,5 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .js .reveal { opacity: 1; transform: none; }
+  .reveal.reveal--pending { opacity: 1; transform: none; }
 }

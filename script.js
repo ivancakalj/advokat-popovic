@@ -1,6 +1,4 @@
 (function () {
-  document.documentElement.classList.add('js');
-
   // ---------- Header on scroll ----------
   var header = document.getElementById('header');
   function onScroll() { header.classList.toggle('is-scrolled', window.scrollY > 40); }
@@ -21,19 +19,26 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMenu(false); });
 
   // ---------- Reveal on scroll ----------
+  // Elementi se sakrivaju tek kada je sigurno da su ispod ekrana i da će ih observer kasnije prikazati,
+  // tako da sadržaj nikada ne ostane nevidljiv (npr. u pregledima bez skrolovanja).
   var revealEls = document.querySelectorAll('.reveal');
   if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
-        if (entry.isIntersecting) { entry.target.classList.add('is-visible'); io.unobserve(entry.target); }
+        var el = entry.target;
+        if (entry.isIntersecting) {
+          el.classList.add('is-visible');
+          io.unobserve(el);
+        } else if (!el.dataset.revealInit && entry.boundingClientRect.top > window.innerHeight) {
+          el.classList.add('reveal--pending');
+        }
+        el.dataset.revealInit = '1';
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
     revealEls.forEach(function (el, i) {
       el.style.transitionDelay = (i % 4) * 80 + 'ms';
       io.observe(el);
     });
-  } else {
-    revealEls.forEach(function (el) { el.classList.add('is-visible'); });
   }
 
   // ---------- Animated counters ----------
