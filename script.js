@@ -18,27 +18,84 @@
   nav.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', function () { setMenu(false); }); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMenu(false); });
 
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- Hero: naslov reč po reč ----------
+  var heroTitle = document.querySelector('.hero__title');
+  if (heroTitle && !reduceMotion) {
+    var words = heroTitle.textContent.trim().split(/\s+/);
+    heroTitle.setAttribute('aria-label', heroTitle.textContent.trim());
+    heroTitle.innerHTML = words.map(function (w, i) {
+      return '<span class="word" aria-hidden="true"><span style="animation-delay:' + (0.25 + i * 0.07).toFixed(2) + 's">' + w + '</span></span>';
+    }).join(' ');
+    heroTitle.classList.add('is-split');
+  }
+
   // ---------- Reveal on scroll ----------
   // Elementi se sakrivaju tek kada je sigurno da su ispod ekrana i da će ih observer kasnije prikazati,
   // tako da sadržaj nikada ne ostane nevidljiv (npr. u pregledima bez skrolovanja).
+  var autoReveal = [
+    ['.section .eyebrow, .process .eyebrow, .faq .eyebrow', ''],
+    ['.section-head .h2, .process__head .h2, .faq__title, .contact__title', ''],
+    ['.section-head__text, .process__text, .process__head > .btn, .faq__text, .contact__head p, .contact__head .btn', ''],
+    ['.stat, .stats__trust', ''],
+    ['.step, .acc, .info-card, .form, .slider-nav, .team__toggle, #cases', ''],
+    ['.footer__grid > *', ''],
+    ['.about__img', 'reveal--img']
+  ];
+  autoReveal.forEach(function (pair) {
+    document.querySelectorAll(pair[0]).forEach(function (el) {
+      el.classList.add('reveal');
+      if (pair[1]) el.classList.add(pair[1]);
+    });
+  });
+
   var revealEls = document.querySelectorAll('.reveal');
-  if ('IntersectionObserver' in window) {
+  if ('IntersectionObserver' in window && !reduceMotion) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         var el = entry.target;
         if (entry.isIntersecting) {
           el.classList.add('is-visible');
           io.unobserve(el);
+          // Posle animacije ukloni kašnjenje da ne usporava hover efekte
+          var delay = parseFloat(el.style.transitionDelay) || 0;
+          setTimeout(function () {
+            el.style.transitionDelay = '';
+            el.classList.remove('reveal--pending');
+          }, el.classList.contains('reveal--pending') ? 1500 + delay : 0);
         } else if (!el.dataset.revealInit && entry.boundingClientRect.top > window.innerHeight) {
           el.classList.add('reveal--pending');
         }
         el.dataset.revealInit = '1';
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    revealEls.forEach(function (el, i) {
-      el.style.transitionDelay = (i % 4) * 80 + 'ms';
+    revealEls.forEach(function (el) {
+      // Postepeno pojavljivanje elemenata koji su jedan pored drugog
+      var siblings = Array.prototype.filter.call(el.parentElement.children, function (c) { return c.classList.contains('reveal'); });
+      var idx = siblings.indexOf(el);
+      el.style.transitionDelay = (idx % 6) * 90 + 'ms';
       io.observe(el);
     });
+  }
+
+  // ---------- Parallax pozadina ----------
+  var parallaxEls = document.querySelectorAll('.process__bg, .faq__bg');
+  if (parallaxEls.length && !reduceMotion) {
+    var ticking = false;
+    function updateParallax() {
+      ticking = false;
+      parallaxEls.forEach(function (bg) {
+        var rect = bg.parentElement.getBoundingClientRect();
+        if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+        var progress = (rect.top + rect.height / 2 - window.innerHeight / 2) / window.innerHeight;
+        bg.style.transform = 'translate3d(0,' + (progress * -60).toFixed(1) + 'px,0)';
+      });
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(updateParallax); }
+    }, { passive: true });
+    updateParallax();
   }
 
   // ---------- Animated counters ----------
@@ -75,21 +132,131 @@
     if (!open) document.getElementById('tim').scrollIntoView({ behavior: 'smooth' });
   });
 
-  // ---------- Cases slider ----------
+  // ---------- Cases slider: strelice + prevlačenje mišem ----------
   var cases = document.getElementById('cases');
+  var prevBtn = document.querySelector('.arrow-btn[data-dir="-1"]');
+  var nextBtn = document.querySelector('.arrow-btn[data-dir="1"]');
+
+  function cardStep() {
+    var card = cases.querySelector('.case-card');
+    var gap = parseFloat(getComputedStyle(cases).columnGap) || 18;
+    return card.offsetWidth + gap;
+  }
+  function maxScroll() { return cases.scrollWidth - cases.clientWidth; }
+  function updateArrows() {
+    prevBtn.disabled = cases.scrollLeft <= 2;
+    nextBtn.disabled = cases.scrollLeft >= maxScroll() - 2;
+  }
   document.querySelectorAll('.arrow-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var card = cases.querySelector('.case-card');
-      var gap = parseFloat(getComputedStyle(cases).columnGap) || 18;
-      cases.scrollBy({ left: (card.offsetWidth + gap) * +btn.dataset.dir, behavior: 'smooth' });
+      cases.scrollBy({ left: cardStep() * +btn.dataset.dir, behavior: 'smooth' });
     });
   });
+  cases.addEventListener('scroll', updateArrows, { passive: true });
+  window.addEventListener('resize', updateArrows);
+  updateArrows();
 
-  // ---------- FAQ: only one open at a time ----------
+  // Prevlačenje mišem (na dodir telefona radi prirodno skrolovanje)
+  var drag = { active: false, moved: false, startX: 0, startScroll: 0, lastX: 0, lastT: 0, velocity: 0, suppressClick: false };
+  var settleTimer;
+
+  cases.addEventListener('pointerdown', function (e) {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    clearTimeout(settleTimer);
+    drag.active = true;
+    drag.moved = false;
+    drag.startX = drag.lastX = e.clientX;
+    drag.startScroll = cases.scrollLeft;
+    drag.lastT = performance.now();
+    drag.velocity = 0;
+    cases.classList.add('is-grabbing');
+  });
+
+  window.addEventListener('pointermove', function (e) {
+    if (!drag.active) return;
+    var dx = e.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) > 5) {
+      drag.moved = true;
+      cases.classList.add('is-dragging');
+    }
+    if (!drag.moved) return;
+    e.preventDefault();
+    cases.scrollLeft = drag.startScroll - dx;
+    var now = performance.now();
+    var dt = Math.max(now - drag.lastT, 1);
+    drag.velocity = 0.8 * ((e.clientX - drag.lastX) / dt) + 0.2 * drag.velocity;
+    drag.lastX = e.clientX;
+    drag.lastT = now;
+  });
+
+  function endDrag() {
+    if (!drag.active) return;
+    drag.active = false;
+    cases.classList.remove('is-grabbing');
+    if (!drag.moved) return;
+    drag.suppressClick = true;
+    setTimeout(function () { drag.suppressClick = false; }, 0);
+
+    // Inercija: projektuj kretanje pa se "zalepi" za najbližu karticu
+    var step = cardStep();
+    var projected = cases.scrollLeft - drag.velocity * 220;
+    var target = Math.round(projected / step) * step;
+    target = Math.max(0, Math.min(target, maxScroll()));
+    cases.scrollTo({ left: target, behavior: 'smooth' });
+    settleTimer = setTimeout(function () { cases.classList.remove('is-dragging'); }, 600);
+  }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  window.addEventListener('blur', endDrag);
+
+  // Posle prevlačenja ne otvaraj link na kartici
+  cases.addEventListener('click', function (e) {
+    if (drag.suppressClick) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  cases.addEventListener('dragstart', function (e) { e.preventDefault(); });
+
+  // ---------- FAQ: animirano otvaranje/zatvaranje, samo jedno otvoreno ----------
   var accs = document.querySelectorAll('.acc');
+  var canAnimate = typeof Element.prototype.animate === 'function' && !reduceMotion;
+  var accEase = 'cubic-bezier(.2, .7, .2, 1)';
+
+  function openAcc(acc) {
+    var body = acc.querySelector('.acc__body');
+    accs.forEach(function (o) { if (o !== acc && o.open) closeAcc(o); });
+    if (acc._anim) acc._anim.cancel();
+    acc.classList.remove('is-closing');
+    acc.open = true;
+    if (!canAnimate) return;
+    var h = body.scrollHeight;
+    acc._anim = body.animate(
+      [{ height: '0px', opacity: 0, transform: 'translateY(-6px)' }, { height: h + 'px', opacity: 1, transform: 'none' }],
+      { duration: 420, easing: accEase }
+    );
+    acc._anim.onfinish = function () { acc._anim = null; };
+  }
+
+  function closeAcc(acc) {
+    var body = acc.querySelector('.acc__body');
+    if (!canAnimate) { acc.open = false; return; }
+    if (acc._anim) acc._anim.cancel();
+    acc.classList.add('is-closing');
+    var h = body.offsetHeight;
+    acc._anim = body.animate(
+      [{ height: h + 'px', opacity: 1 }, { height: '0px', opacity: 0 }],
+      { duration: 340, easing: accEase }
+    );
+    acc._anim.onfinish = function () {
+      acc._anim = null;
+      acc.open = false;
+      acc.classList.remove('is-closing');
+    };
+  }
+
   accs.forEach(function (acc) {
-    acc.addEventListener('toggle', function () {
-      if (acc.open) accs.forEach(function (o) { if (o !== acc) o.open = false; });
+    acc.querySelector('summary').addEventListener('click', function (e) {
+      e.preventDefault();
+      if (acc.open && !acc.classList.contains('is-closing')) closeAcc(acc);
+      else openAcc(acc);
     });
   });
 
