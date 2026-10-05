@@ -59,11 +59,10 @@
           el.classList.add('is-visible');
           io.unobserve(el);
           // Posle animacije ukloni kašnjenje da ne usporava hover efekte
-          var delay = parseFloat(el.style.transitionDelay) || 0;
-          setTimeout(function () {
-            el.style.transitionDelay = '';
-            el.classList.remove('reveal--pending');
-          }, el.classList.contains('reveal--pending') ? 1500 + delay : 0);
+          if (el.classList.contains('reveal--pending')) {
+            var delay = parseFloat(el.style.getPropertyValue('--rd')) || 0;
+            setTimeout(function () { el.classList.remove('reveal--pending'); }, 1700 + delay);
+          }
         } else if (!el.dataset.revealInit && entry.boundingClientRect.top > window.innerHeight) {
           el.classList.add('reveal--pending');
         }
@@ -74,7 +73,7 @@
       // Postepeno pojavljivanje elemenata koji su jedan pored drugog
       var siblings = Array.prototype.filter.call(el.parentElement.children, function (c) { return c.classList.contains('reveal'); });
       var idx = siblings.indexOf(el);
-      el.style.transitionDelay = (idx % 6) * 90 + 'ms';
+      el.style.setProperty('--rd', (idx % 6) * 90 + 'ms');
       io.observe(el);
     });
   }
@@ -218,7 +217,30 @@
   // ---------- FAQ: animirano otvaranje/zatvaranje, samo jedno otvoreno ----------
   var accs = document.querySelectorAll('.acc');
   var canAnimate = typeof Element.prototype.animate === 'function' && !reduceMotion;
-  var accEase = 'cubic-bezier(.2, .7, .2, 1)';
+  var accEase = 'cubic-bezier(.4, 0, .2, 1)';
+  var ACC_MS = 380;
+  var accordion = document.querySelector('.accordion');
+
+  // Lista pitanja dobija stalnu visinu (visina kada je otvoren najduži odgovor),
+  // pa se sekcija ne skuplja i ne širi dok se pitanja otvaraju i zatvaraju.
+  function lockAccordionHeight() {
+    var states = Array.prototype.map.call(accs, function (a) { return a.open; });
+    accordion.style.minHeight = '';
+    var max = 0;
+    accs.forEach(function (target) {
+      accs.forEach(function (a) { a.open = a === target; });
+      max = Math.max(max, accordion.offsetHeight);
+    });
+    accs.forEach(function (a, i) { a.open = states[i]; });
+    accordion.style.minHeight = max + 'px';
+  }
+  lockAccordionHeight();
+  var lockTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(lockTimer);
+    lockTimer = setTimeout(lockAccordionHeight, 150);
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(lockAccordionHeight);
 
   function openAcc(acc) {
     var body = acc.querySelector('.acc__body');
@@ -229,8 +251,8 @@
     if (!canAnimate) return;
     var h = body.scrollHeight;
     acc._anim = body.animate(
-      [{ height: '0px', opacity: 0, transform: 'translateY(-6px)' }, { height: h + 'px', opacity: 1, transform: 'none' }],
-      { duration: 420, easing: accEase }
+      [{ height: '0px', opacity: 0 }, { height: h + 'px', opacity: 1 }],
+      { duration: ACC_MS, easing: accEase }
     );
     acc._anim.onfinish = function () { acc._anim = null; };
   }
@@ -243,7 +265,7 @@
     var h = body.offsetHeight;
     acc._anim = body.animate(
       [{ height: h + 'px', opacity: 1 }, { height: '0px', opacity: 0 }],
-      { duration: 340, easing: accEase }
+      { duration: ACC_MS, easing: accEase }
     );
     acc._anim.onfinish = function () {
       acc._anim = null;
